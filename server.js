@@ -4,7 +4,7 @@ import {parseUpload, setupWhatnot} from './whatnot.js';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import {restoreWorkspace} from './workspace.js';
 
 export function validate(row) {
   const type = String(row.type || '').trim().toLowerCase();
@@ -20,31 +20,33 @@ export function validate(row) {
   if (!rawAmount || !Number.isFinite(amount) || amount <= 0 || amount > 1e9 || !/^\d+(\.\d{1,2})?$/.test(rawAmount)) throw new Error('Amount must be positive with at most two decimal places.');
   return { type, date, description, category, cents: Math.round(amount * 100) };
 }
-export async function createApp(dbPath = 'data/ledger.sqlite') {
+export async function createApp(dbPath = 'data/ledger.sqlite',options={}) {
   if (dbPath !== ':memory:') mkdirSync(resolve(dbPath, '..'), { recursive: true });
   const db = new DatabaseSync(dbPath);
   db.exec(`PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, date TEXT NOT NULL, description TEXT NOT NULL, category TEXT NOT NULL, cents INTEGER NOT NULL);`);
   const insert = db.prepare('INSERT INTO transactions (type,date,description,category,cents) VALUES (?,?,?,?,?)');
   const save = row => insert.run(row.type,row.date,row.description,row.category,row.cents);
   const whatnot=setupWhatnot(db);
+  try{restoreWorkspace(db,options.state);}catch(error){db.close();throw error;}
+  const persist=async()=>options.persist?.(db);
   const app = express();
   app.use(express.json({limit:'32kb'}));
   app.get('/api/transactions', (req,res) => res.json([...db.prepare('SELECT * FROM transactions ORDER BY date DESC,id DESC').all(),...whatnot.getTransactions()].sort((a,b)=>b.date.localeCompare(a.date))));
   app.get('/api/whatnot', (req,res)=>res.json(whatnot.summary()));
-  app.post('/api/transactions', (req,res,next) => { try { const row = validate(req.body); const result=save(row); res.status(201).json({...row,id:Number(result.lastInsertRowid)}); } catch(e) { e.status=400; next(e); } });
-  app.delete('/api/transactions/:id', (req,res) => { const result=db.prepare('DELETE FROM transactions WHERE id=?').run(req.params.id); res.status(result.changes ? 204:404).end(); });
+  app.post('/api/transactions', async (req,res,next) => { try { const row = validate(req.body); const result=save(row); await persist(); res.status(201).json({...row,id:Number(result.lastInsertRowid)}); } catch(e) { e.status ||=400; next(e); } });
+  app.delete('/api/transactions/:id', async (req,res,next) => {try{ const result=db.prepare('DELETE FROM transactions WHERE id=?').run(req.params.id); if(result.changes)await persist();res.status(result.changes ? 204:404).end();}catch(error){next(error);} });
   const upload = multer({storage:multer.memoryStorage(),limits:{fileSize:2*1024*1024,files:20,fields:1}});
   const importFile=(file,type)=>{
     if(!file.originalname.toLowerCase().endsWith('.csv')) throw Error('Only CSV files are supported.');
     return whatnot.importReport(parseUpload(file.buffer,type,validate),file.originalname,save);
   };
-  app.post('/api/import', upload.single('file'), (req,res,next) => {
+  app.post('/api/import', upload.single('file'), async (req,res,next) => {
     try {
       if (!req.file) throw new Error('Choose a CSV file.');
-      res.json(importFile(req.file,req.body.type));
-    } catch(e) {e.status=400;next(e);}
+      const result=importFile(req.file,req.body.type);await persist();res.json(result);
+    } catch(e) {e.status ||=400;next(e);}
   });
-  app.post('/api/import/batch', upload.array('files',20), (req,res,next) => {
+  app.post('/api/import/batch', upload.array('files',20), async (req,res,next) => {
     try {
       if(!req.files?.length) throw Error('Choose at least one CSV file.');
       const results=req.files.map(file=>{
@@ -52,11 +54,13 @@ export async function createApp(dbPath = 'data/ledger.sqlite') {
         catch(error) {return {filename:file.originalname,status:'error',error:error.message,imported:0,skipped:0,updated:0};}
       });
       const totals=results.reduce((sum,file)=>({imported:sum.imported+file.imported,skipped:sum.skipped+file.skipped,updated:sum.updated+file.updated,failed:sum.failed+(file.status==='error'?1:0)}),{imported:0,skipped:0,updated:0,failed:0});
-      res.json({results,totals});
-    }catch(e){e.status=400;next(e);}
+      await persist();res.json({results,totals});
+    }catch(e){e.status ||=400;next(e);}
   });
   app.use('/api', (req,res)=>res.status(404).json({error:'Not found.'}));
-  if(process.env.NODE_ENV==='production') {
+  if(options.apiOnly) {
+    // Static files are served separately by Vercel.
+  } else if(process.env.NODE_ENV==='production') {
     app.use(express.static('dist'));
     app.get('/{*path}',(req,res)=>res.sendFile(resolve('dist/index.html')));
   } else {
@@ -68,8 +72,4 @@ export async function createApp(dbPath = 'data/ledger.sqlite') {
   app.use((error,req,res,next)=>res.status(error.status || 400).json({error:error.code==='LIMIT_FILE_SIZE'?'Each CSV must be 2 MB or smaller.':error.code==='LIMIT_FILE_COUNT'||error.code==='LIMIT_UNEXPECTED_FILE'?'Upload at most 20 CSV files per batch.':error.message || 'Request failed.'}));
   app.locals.db=db;
   return app;
-}
-if(process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const app=await createApp(process.env.DB_PATH || 'data/ledger.sqlite');
-  app.listen(Number(process.env.PORT || 3000),'0.0.0.0',()=>console.log('Ledger is running on port '+(process.env.PORT || 3000)));
 }

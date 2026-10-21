@@ -2,6 +2,8 @@
 
 A whimsical dashboard for a Disney pin shop, built with React, Express, and SQLite. Requires Node 24 (uses built-in `node:sqlite`).
 
+**Publishing:** follow [the step-by-step Vercel + Supabase checklist](docs/DEPLOY.md). Run the SQL migration, create an app login, and add the two Vercel environment variables before using the published app.
+
 ```sh
 npm ci --cache /workspace/.npm-cache
 npm run dev
@@ -23,7 +25,7 @@ Saved rows appear in the searchable, paginated Expense book and can be exported.
 
 ## Imports
 
-Use **Import CSV** to select up to **20 CSV files at once**. Each file has a 2 MB / 10,000 row limit. The results screen shows added, skipped, updated, and failed counts for each file. Every file is validated and committed atomically; one failed file does not stop other valid files. Repeating a batch safely skips records already present, including records imported by earlier files in the same batch. Oversized batches or files are rejected before any file is imported. Three Whatnot export formats are detected automatically:
+Use **Import CSV** to select up to **20 CSV files at once**. Each file has a 2 MB / 10,000 row limit. The results screen shows added, skipped, updated, and failed counts for each file. Every file is validated and committed atomically; one failed file does not stop other valid files. Repeating a batch safely skips records already present, including records imported by earlier files in the same batch. Oversized batches or files are rejected by the UI before importing. In cloud mode the browser uploads one file per request (under Vercel's 4.5 MB request limit), with progress and per-file results. The local batch endpoint remains supported. Each file is committed independently; retries skip existing data. Three Whatnot export formats are detected automatically:
 
 - **Weekly earnings**: `LEDGER_TRANSACTION_ID` identifies each entry. Positive `TRANSACTION_AMOUNT` is settled income after platform fees; negative entries become expenses (including giveaway shipping). Zero entries are retained for reconciliation. Fees are displayed separately and are not deducted twice. Positive cost-of-goods values become expenses. Blank or zero COGS is flagged as incomplete; operating balance is not final profit. Dates use `TRANSACTION_COMPLETED_AT_UTC`, not order placement or report week.
 - **Daily overview**: estimated gross sales, net earnings and order counts are shown separately, by export date. They never create financial transactions. A new overview replaces matching dates rather than adding duplicates.
@@ -35,4 +37,8 @@ Custom sales/expense CSVs use `date,description,category,amount` with YYYY-MM-DD
 
 ## Scope
 
-This is a single-workspace application without authentication. Keep it in the private development environment; add authentication and access controls before a public deployment. No bank connection or automatic Whatnot login is used. Source uploads are processed as data and not stored; normalized data is retained in SQLite. Export downloads the currently filtered financial transactions. Whatnot analytics include only uploaded periods, and missing weekly reports are not filled using estimates.
+Without Supabase settings, local development uses the existing SQLite database without authentication; keep this mode private. On Vercel, both `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` are required. Missing configuration fails closed rather than falling back to a temporary SQLite database. Sign-in uses Supabase email/password authentication; every API request verifies the user session. SQL row-level policies restrict each account to its own workspace. The app never needs a service-role key. Disable public signups in Supabase and create the app user through its dashboard.
+
+In Supabase mode, durable records and import history are stored as a versioned JSON workspace in PostgreSQL. Each request uses an isolated in-memory SQLite engine for the existing validation/import logic, then commits changes through an atomic Supabase function. Optimistic version checks return HTTP 409 on overlapping writes instead of losing data. Imported records and transaction IDs survive function restarts. This design suits the current small-business dataset; large multi-user reporting or inventory systems should move to normalized relational tables. Original local SQLite files are not automatically migrated; retain them and re-import CSVs as explained in the deployment checklist.
+
+For local Supabase testing, copy `.env.example` to `.env.local`, enter the two project settings, and restart `npm run dev`. Both files with real values and Vercel metadata are ignored by Git. Never put passwords or privileged keys in source code. No bank connection or automatic Whatnot login is used. Source uploads are processed as data and not stored; normalized data is retained in SQLite. Export downloads the currently filtered financial transactions. Whatnot analytics include only uploaded periods, and missing weekly reports are not filled using estimates.

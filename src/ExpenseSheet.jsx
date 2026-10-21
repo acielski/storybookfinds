@@ -1,4 +1,5 @@
 import React,{useState,useEffect} from 'react';
+import {importFiles} from './api.js';
 import {Plus,Trash2,Save,FileSpreadsheet,Sparkles,Search,Download} from 'lucide-react';
 const money=n=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(n);
 const blank=()=>({id:crypto.randomUUID(),date:new Date().toLocaleDateString('en-CA'),item:'',category:'Pins & inventory',cost:''});
@@ -16,9 +17,8 @@ export default function ExpenseSheet({expenses,onSaved,onDelete}){
   setBusy(true);setError('');setMessage('');
   try{
    const csv='date,description,category,amount\n'+active.map(r=>[r.date,r.item,r.category,r.cost].map(quote).join(',')).join('\n');
-   const form=new FormData();form.set('type','expense');form.append('files',new Blob([csv],{type:'text/csv'}),'expense-sheet.csv');
-   const response=await fetch('/api/import/batch',{method:'POST',body:form});const result=await response.json();
-   if(!response.ok)throw Error(result.error||'Unable to save expenses.');
+   const file=new File([csv],'expense-sheet.csv',{type:'text/csv'});
+   const result=await importFiles([file],'expense');
    if(result.totals.failed)throw Error(result.results[0].error);
    setDrafts([blank(),blank(),blank()]);setMessage(`${result.totals.imported} expenses saved${result.totals.skipped?` · ${result.totals.skipped} duplicates skipped`:''}.`);
    await onSaved();
