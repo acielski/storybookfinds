@@ -11,12 +11,12 @@ export function exportWorkspace(db) {
 export function restoreWorkspace(db,state) {
   if(!state)return;
   if(state.schemaVersion!==1||!Array.isArray(state.transactions)||!Array.isArray(state.records)||!Array.isArray(state.imports))throw Error('Unsupported workspace data.');
-  const transaction=db.prepare('INSERT INTO transactions(id,type,date,description,category,cents) VALUES(?,?,?,?,?,?)');
+  const transaction=db.prepare('INSERT INTO transactions(id,type,date,description,category,cents,quantity) VALUES(?,?,?,?,?,?,?)');
   const record=db.prepare('INSERT INTO whatnot_records(source_key,format,payload) VALUES(?,?,?)');
   const history=db.prepare('INSERT INTO imports(id,filename,format,imported,skipped,updated,created_at) VALUES(?,?,?,?,?,?,?)');
   db.exec('BEGIN');
   try {
-    state.transactions.forEach(r=>transaction.run(r.id,r.type,r.date,r.description,r.category,r.cents));
+    state.transactions.forEach(r=>transaction.run(r.id,r.type,r.date,r.description,r.category,r.cents,r.quantity??null));
     state.records.forEach(r=>record.run(r.source_key,r.format,r.payload));
     state.imports.forEach(r=>history.run(r.id,r.filename,r.format,r.imported,r.skipped,r.updated,r.created_at));
     if(state.sequences){

@@ -1,5 +1,6 @@
 import {parse} from 'csv-parse/sync';
 import {createHash} from 'node:crypto';
+import {isPinCategory} from './src/pins.js';
 
 const hash=value=>createHash('sha256').update(value).digest('hex');
 export function cents(value,{optional=false}={}) {
@@ -52,18 +53,33 @@ export function setupWhatnot(db){
  db.exec('CREATE TABLE IF NOT EXISTS whatnot_records (source_key TEXT PRIMARY KEY, format TEXT NOT NULL, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS imports (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT NOT NULL, format TEXT NOT NULL, imported INTEGER NOT NULL, skipped INTEGER NOT NULL, updated INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
  const write=db.prepare('INSERT INTO whatnot_records(source_key,format,payload) VALUES(?,?,?) ON CONFLICT(source_key) DO UPDATE SET payload=excluded.payload');
  const read=db.prepare('SELECT payload FROM whatnot_records WHERE source_key=?');
- const fingerprint=row=>hash(JSON.stringify([row.type,row.date,row.description.normalize('NFKC').trim().replace(/\s+/g,' ').toLowerCase(),row.category.normalize('NFKC').trim().replace(/\s+/g,' ').toLowerCase(),row.cents]));
+ const fingerprint=row=>hash(JSON.stringify([row.type,row.date,row.description.normalize('NFKC').trim().replace(/\s+/g,' ').toLowerCase(),isPinCategory(row.category)?'pins':row.category.normalize('NFKC').trim().replace(/\s+/g,' ').toLowerCase(),row.cents]));
  return {
   importReport({format,rows},filename,save){
    let imported=0,skipped=0,updated=0;
-   const known=format==='standard'?new Set([...db.prepare('SELECT * FROM transactions').all(),...this.getTransactions()].map(fingerprint)):null;
+   const known=new Map();
+   if(format==='standard')for(const row of [...db.prepare('SELECT * FROM transactions').all(),...this.getTransactions()]){
+    const key=fingerprint(row);known.set(key,[...(known.get(key)||[]),row]);
+   }
    db.exec('BEGIN');
    try{
     for(const row of rows){
      if(format==='standard'){
       const key=fingerprint(row);
-      if(known.has(key)){skipped++;continue;}
-      save(row);known.add(key);imported++;continue;
+      const matches=known.get(key);
+      if(matches){
+        if(row.quantity!=null){
+          if(matches.length!==1)throw Error('Multiple matching pin purchases exist. Edit their quantities individually.');
+          const existing=matches[0];
+          if(existing.quantity!=null&&existing.quantity!==row.quantity)throw Error('A matching pin purchase has a different quantity. Edit the saved quantity instead; no duplicate was added.');
+          if(existing.quantity==null){
+            db.prepare('UPDATE transactions SET category=?,quantity=? WHERE id=?').run('Pins',row.quantity,existing.id);
+            existing.category='Pins';existing.quantity=row.quantity;updated++;continue;
+          }
+        }
+        skipped++;continue;
+      }
+      const result=save(row);known.set(key,[{...row,id:Number(result.lastInsertRowid)}]);imported++;continue;
      }
      const existing=read.get(row.key),serialized=JSON.stringify(row);
      if(existing){if(existing.payload===serialized){skipped++;continue;}
