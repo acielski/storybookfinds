@@ -28,7 +28,7 @@ export function parseUpload(buffer,type,validate){
  const header=records[0];
  const format='ledger_transaction_id' in header?'earnings':'estimated sales' in header?'overview':('created date' in header&&'transaction type' in header)?'wallet':'standard';
  const rows=records.map((r,i)=>{try{
-  if(format==='standard')return validate({...r,type:type||r.type});
+  if(format==='standard')return validate({...r,type:r.type||type});
   if(format==='earnings'){
    for(const field of ['ledger_transaction_id','transaction_completed_at_utc','transaction_currency','transaction_amount','transaction_type'])if(!r[field])throw Error(`Missing ${field}.`);
    if(r.transaction_currency!=='USD')throw Error('Only USD reports are supported.');
@@ -52,13 +52,19 @@ export function setupWhatnot(db){
  db.exec('CREATE TABLE IF NOT EXISTS whatnot_records (source_key TEXT PRIMARY KEY, format TEXT NOT NULL, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS imports (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT NOT NULL, format TEXT NOT NULL, imported INTEGER NOT NULL, skipped INTEGER NOT NULL, updated INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
  const write=db.prepare('INSERT INTO whatnot_records(source_key,format,payload) VALUES(?,?,?) ON CONFLICT(source_key) DO UPDATE SET payload=excluded.payload');
  const read=db.prepare('SELECT payload FROM whatnot_records WHERE source_key=?');
+ const fingerprint=row=>hash(JSON.stringify([row.type,row.date,row.description.normalize('NFKC').trim().replace(/\s+/g,' ').toLowerCase(),row.category.normalize('NFKC').trim().replace(/\s+/g,' ').toLowerCase(),row.cents]));
  return {
   importReport({format,rows},filename,save){
    let imported=0,skipped=0,updated=0;
+   const known=format==='standard'?new Set([...db.prepare('SELECT * FROM transactions').all(),...this.getTransactions()].map(fingerprint)):null;
    db.exec('BEGIN');
    try{
     for(const row of rows){
-     if(format==='standard'){save(row);imported++;continue;}
+     if(format==='standard'){
+      const key=fingerprint(row);
+      if(known.has(key)){skipped++;continue;}
+      save(row);known.add(key);imported++;continue;
+     }
      const existing=read.get(row.key),serialized=JSON.stringify(row);
      if(existing){if(existing.payload===serialized){skipped++;continue;}
       if(format==='earnings')throw Error('An existing earnings ID has conflicting values; no rows were imported.');

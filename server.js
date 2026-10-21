@@ -33,13 +33,27 @@ export async function createApp(dbPath = 'data/ledger.sqlite') {
   app.get('/api/whatnot', (req,res)=>res.json(whatnot.summary()));
   app.post('/api/transactions', (req,res,next) => { try { const row = validate(req.body); const result=save(row); res.status(201).json({...row,id:Number(result.lastInsertRowid)}); } catch(e) { e.status=400; next(e); } });
   app.delete('/api/transactions/:id', (req,res) => { const result=db.prepare('DELETE FROM transactions WHERE id=?').run(req.params.id); res.status(result.changes ? 204:404).end(); });
-  const upload = multer({storage:multer.memoryStorage(),limits:{fileSize:2*1024*1024,files:1}});
+  const upload = multer({storage:multer.memoryStorage(),limits:{fileSize:2*1024*1024,files:20,fields:1}});
+  const importFile=(file,type)=>{
+    if(!file.originalname.toLowerCase().endsWith('.csv')) throw Error('Only CSV files are supported.');
+    return whatnot.importReport(parseUpload(file.buffer,type,validate),file.originalname,save);
+  };
   app.post('/api/import', upload.single('file'), (req,res,next) => {
     try {
       if (!req.file) throw new Error('Choose a CSV file.');
-      const report=parseUpload(req.file.buffer,req.body.type,validate);
-      res.json(whatnot.importReport(report,req.file.originalname,save));
+      res.json(importFile(req.file,req.body.type));
     } catch(e) {e.status=400;next(e);}
+  });
+  app.post('/api/import/batch', upload.array('files',20), (req,res,next) => {
+    try {
+      if(!req.files?.length) throw Error('Choose at least one CSV file.');
+      const results=req.files.map(file=>{
+        try {return {filename:file.originalname,status:'success',...importFile(file,req.body.type)};}
+        catch(error) {return {filename:file.originalname,status:'error',error:error.message,imported:0,skipped:0,updated:0};}
+      });
+      const totals=results.reduce((sum,file)=>({imported:sum.imported+file.imported,skipped:sum.skipped+file.skipped,updated:sum.updated+file.updated,failed:sum.failed+(file.status==='error'?1:0)}),{imported:0,skipped:0,updated:0,failed:0});
+      res.json({results,totals});
+    }catch(e){e.status=400;next(e);}
   });
   app.use('/api', (req,res)=>res.status(404).json({error:'Not found.'}));
   if(process.env.NODE_ENV==='production') {
@@ -51,7 +65,7 @@ export async function createApp(dbPath = 'data/ledger.sqlite') {
     app.use(vite.middlewares);
     app.locals.vite=vite;
   }
-  app.use((error,req,res,next)=>res.status(error.status || 400).json({error:error.message || 'Request failed.'}));
+  app.use((error,req,res,next)=>res.status(error.status || 400).json({error:error.code==='LIMIT_FILE_SIZE'?'Each CSV must be 2 MB or smaller.':error.code==='LIMIT_FILE_COUNT'||error.code==='LIMIT_UNEXPECTED_FILE'?'Upload at most 20 CSV files per batch.':error.message || 'Request failed.'}));
   app.locals.db=db;
   return app;
 }

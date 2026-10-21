@@ -1,6 +1,6 @@
-# Ledger · Storybook Finds
+# Storybook Finds · Your shop journal
 
-A local sales and expense dashboard built with React, Express, and SQLite. Requires Node 24 (uses built-in `node:sqlite`).
+A whimsical dashboard for a Disney pin shop, built with React, Express, and SQLite. Requires Node 24 (uses built-in `node:sqlite`).
 
 ```sh
 npm ci --cache /workspace/.npm-cache
@@ -15,9 +15,15 @@ npm test
 npm start
 ```
 
+## Expense sheet
+
+Open **Expenses** to enter Date, Item, Category, and Cost directly into a spreadsheet-style grid. Tab between cells, add or remove rows, and use **Save expenses** to save multiple rows together. Blank rows are ignored; partial rows must be completed before saving. Categories support suggested options or your own text. Unsaved totals are displayed in USD. Drafts remain while switching tabs but are not retained after a page reload.
+
+Saved rows appear in the searchable, paginated Expense book and can be exported. Imported Whatnot entries are read-only; manual/custom expenses can be deleted. The expense sheet uses the same duplicate protection as custom CSV imports, so repeating a save after a network interruption will skip records already present. Inventory purchases are recorded as expenses; the app does not track inventory valuation or automatically allocate inventory purchases to individual sold pins.
+
 ## Imports
 
-Upload one CSV at a time with **Import CSV**. Imports validate completely before committing, with a 2 MB / 10,000 row limit. Three Whatnot export formats are detected automatically:
+Use **Import CSV** to select up to **20 CSV files at once**. Each file has a 2 MB / 10,000 row limit. The results screen shows added, skipped, updated, and failed counts for each file. Every file is validated and committed atomically; one failed file does not stop other valid files. Repeating a batch safely skips records already present, including records imported by earlier files in the same batch. Oversized batches or files are rejected before any file is imported. Three Whatnot export formats are detected automatically:
 
 - **Weekly earnings**: `LEDGER_TRANSACTION_ID` identifies each entry. Positive `TRANSACTION_AMOUNT` is settled income after platform fees; negative entries become expenses (including giveaway shipping). Zero entries are retained for reconciliation. Fees are displayed separately and are not deducted twice. Positive cost-of-goods values become expenses. Blank or zero COGS is flagged as incomplete; operating balance is not final profit. Dates use `TRANSACTION_COMPLETED_AT_UTC`, not order placement or report week.
 - **Daily overview**: estimated gross sales, net earnings and order counts are shown separately, by export date. They never create financial transactions. A new overview replaces matching dates rather than adding duplicates.
@@ -25,7 +31,7 @@ Upload one CSV at a time with **Import CSV**. Imports validate completely before
 
 Repeat Whatnot uploads skip duplicates; conflicting weekly ledger IDs fail the entire import for review. Import history shows added, skipped and updated counts. Whatnot rows are read-only in the transaction table; manual rows can be deleted.
 
-Custom sales/expense CSVs use `date,description,category,amount` with YYYY-MM-DD dates, USD amounts and positive amounts of up to two decimal places. Select Sale or Expense in the import dialog. Custom files have no stable IDs and are **not deduplicated**.
+Custom sales/expense CSVs use `date,description,category,amount` with YYYY-MM-DD dates, USD amounts and positive amounts of up to two decimal places. Select Sale or Expense in the import dialog. When a CSV contains a `type` column, its sale/expense values take priority over the dialog selection, allowing mixed transaction exports to be re-imported safely. Custom rows are deduplicated against existing manual/custom transactions and imported Whatnot financial transactions using type, date, amount in cents, and normalized description/category (Unicode normalization, case-insensitive, collapsed whitespace). This also protects data imported before batch support. Identical rows within the same file are skipped. Custom CSVs have no stable transaction IDs: two genuine transactions with the same identifying fields cannot be distinguished, so record those manually instead. Deleting a manual/custom transaction allows it to be imported again; no existing duplicates are automatically deleted.
 
 ## Scope
 
