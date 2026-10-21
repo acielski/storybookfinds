@@ -48,3 +48,11 @@ In Supabase mode, durable records and import history are stored as a versioned J
 For local Supabase testing, copy `.env.example` to `.env.local`, enter the two project settings, and restart `npm run dev`. Both files with real values and Vercel metadata are ignored by Git. Never put passwords or privileged keys in source code. No bank connection or automatic Whatnot login is used. Source uploads are processed as data and not stored; normalized data is retained in SQLite. Export downloads the currently filtered financial transactions. Whatnot analytics include only uploaded periods, and missing weekly reports are not filled using estimates.
 
 Username sign-in is available as an optional server-configured alias for the existing shop account. See the username section in [the deployment checklist](docs/DEPLOY.md). Set `SHOP_USERNAME` and `SHOP_LOGIN_EMAIL` in Vercel and redeploy; no additional Supabase keys or SQL are required. Email sign-in remains supported.
+
+## Calculator and bundle pricing
+
+Open **Pricing** from the sidebar. The bundle builder starts with four empty pin-price slots; add or remove slots as needed. Enter prices in USD and select a discount preset or enter your own percentage from 0–100 (up to two decimal places). Blank slots are ignored. The original total, discount, and final bundle price update immediately. Discount amounts round to the nearest cent before subtraction. **Copy bundle quote** copies the prices and discount for sharing. **Start over** restores four blank slots and a 10% discount.
+
+The basic calculator supports addition, subtraction, multiplication, division, decimals, percentages, sign changes, clear, backspace, and keyboard controls while focused inside the calculator. Like a basic handheld calculator, chained operations are evaluated as entered. With + or −, the percent key calculates a percentage of the first number (200 − 10% = 180); with multiplication it divides the current input by 100 (200 × 10% = 20).
+
+Pricing is a scratchpad: navigating between tabs retains the current calculations, but reloading the page clears them. Quotes do not create sales or change recorded expenses.
