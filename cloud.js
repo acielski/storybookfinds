@@ -2,6 +2,7 @@ import express from 'express';
 import {resolve} from 'node:path';
 import {createApp} from './server.js';
 import {exportWorkspace} from './workspace.js';
+import {usernameSignIn} from './username-auth.js';
 
 function failure(message,status=503){return Object.assign(new Error(message),{status});}
 export function cloudConfig(env=process.env){
@@ -55,6 +56,10 @@ export async function createRuntimeApp({env=process.env,gateway,fetchImpl,apiOnl
  const app=express(),store=gateway||(config?supabaseGateway(config,fetchImpl):null);
  app.use('/api',(req,res,next)=>{res.set('Cache-Control','no-store');next();});
  app.get('/api/config',(req,res)=>configurationError?res.status(503).json({error:configurationError.message}):res.json({mode:'supabase',url:config.url,publishableKey:config.key}));
+ app.post('/api/auth/username',express.json({limit:'4kb'}),(req,res,next)=>{
+  if(configurationError)return res.status(503).json({error:configurationError.message});
+  return usernameSignIn({env,config,fetchImpl})(req,res,next);
+ });
  app.use(async(req,res,next)=>{
   if(!req.path.startsWith('/api/'))return next();
   try{
@@ -69,6 +74,7 @@ export async function createRuntimeApp({env=process.env,gateway,fetchImpl,apiOnl
   }catch(error){res.status(error.status||503).json({error:error.message});}
  });
  if(!apiOnly)await attachFrontend(app,env);
+ app.use((error,req,res,next)=>res.status(error.status||500).json({error:'Unable to process the request. Please try again.'}));
  return app;
 }
 async function attachFrontend(app,env){

@@ -94,3 +94,17 @@ Do not delete your local database or original CSVs until you have checked the pu
 | Wrong design after deployment | Confirm Vercel deployed the latest commit on `main`, then refresh the page. |
 
 After setup, pushes to `main` will redeploy the app automatically when Vercel's GitHub integration is connected. Deploying new code does not erase Supabase records.
+
+## Optional: sign in with a username
+
+This adds a username alias for the shop account you already created. Your password and records stay the same. Email sign-in remains available. There is no new SQL to run.
+
+1. In Vercel, open your Storybook Finds project.
+2. Open **Settings → Environment Variables**.
+3. Add `SHOP_USERNAME` with the username you want, such as `storybookfinds`. Use letters, digits, dots, underscores or hyphens, with no spaces or `@` symbol.
+4. Add `SHOP_LOGIN_EMAIL` with the email address of the **existing app user** under Supabase Authentication → Users. Do not use your Supabase dashboard login unless it is also that app user's email.
+5. Apply both settings to Production (and Preview if you use it).
+6. Open **Deployments**, open the newest deployment's menu, and click **Redeploy**.
+7. Visit the app. In **Username or email**, enter your username and use the same app password as before.
+
+Usernames ignore capitalization and leading/trailing spaces. This alias is configured for one shop owner; additional accounts can continue signing in using their emails. Changing the alias does not create an account or change ownership of any data. Do not put your password in either environment variable. The login email stays on the server and is only sent to Supabase during password verification.

@@ -1,6 +1,6 @@
 import React,{createContext,useContext,useEffect,useState} from 'react';
 import {createClient} from '@supabase/supabase-js';
-import {Sparkles,LockKeyhole,ArrowRight,LogOut,Mail} from 'lucide-react';
+import {Sparkles,LockKeyhole,ArrowRight,LogOut,UserRound} from 'lucide-react';
 import {setAuthClient} from './api.js';
 const AuthContext=createContext(null);
 export function Account(){
@@ -33,8 +33,17 @@ export default function Auth({children}){
  const signIn=async e=>{
   e.preventDefault();setBusy(true);setError('');
   const form=new FormData(e.target);
-  try{const {error}=await client.auth.signInWithPassword({email:String(form.get('email')).trim(),password:String(form.get('password'))});if(error)throw error;}
+  try{
+   const identifier=String(form.get('identifier')).trim(),password=String(form.get('password'));
+   if(identifier.includes('@')){
+    const {error}=await client.auth.signInWithPassword({email:identifier,password});if(error)throw error;
+   }else{
+    const response=await fetch('/api/auth/username',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:identifier,password})});
+    const result=await response.json();if(!response.ok)throw Error(result.error||'Unable to sign in.');
+    const {error}=await client.auth.setSession({access_token:result.access_token,refresh_token:result.refresh_token});if(error)throw error;
+   }
+  }
   catch(e){setError(e.message);}finally{setBusy(false);}
  };
- return <div className="auth-page"><div className="auth-card"><span className="auth-pin"><Sparkles size={30}/></span><span className="eyebrow">YOUR SHOP’S LITTLE SECRET</span><h1>Welcome to<br/><em>Storybook Finds.</em></h1><p>A cozy corner for your pin business.<br/>Your numbers, just for you.</p>{loading?<div className="auth-loading" role="status">Opening your storybook…</div>:<>{error&&<div className="error" role="alert">{error}</div>}{client?<form onSubmit={signIn}><label><span><Mail size={13}/> Email address</span><input name="email" type="email" autoComplete="username" required autoFocus placeholder="you@example.com"/></label><label><span><LockKeyhole size={13}/> Password</span><input name="password" type="password" autoComplete="current-password" required placeholder="Your password"/></label><button className="button primary" disabled={busy}>{busy?'Signing in…':'Open my shop'}<ArrowRight size={15}/></button><p className="auth-help">Use the account created in Supabase Authentication. Need a password reset? Ask your shop administrator.</p></form>:<button className="button secondary" onClick={()=>setAttempt(n=>n+1)}>Try again</button>}</>}<span className="auth-footer">✧ A collection of little wins ✧</span></div></div>;
+ return <div className="auth-page"><div className="auth-card"><span className="auth-pin"><Sparkles size={30}/></span><span className="eyebrow">YOUR SHOP’S LITTLE SECRET</span><h1>Welcome to<br/><em>Storybook Finds.</em></h1><p>A cozy corner for your pin business.<br/>Your numbers, just for you.</p>{loading?<div className="auth-loading" role="status">Opening your storybook…</div>:<>{error&&<div className="error" role="alert">{error}</div>}{client?<form onSubmit={signIn}><label><span><UserRound size={13}/> Username or email</span><input name="identifier" type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={254} required autoFocus placeholder="Your shop username"/></label><label><span><LockKeyhole size={13}/> Password</span><input name="password" type="password" autoComplete="current-password" required placeholder="Your password"/></label><button className="button primary" disabled={busy}>{busy?'Signing in…':'Open my shop'}<ArrowRight size={15}/></button><p className="auth-help">Use your shop username and your existing password. Email sign-in also works. Need a password reset? Ask your shop administrator.</p></form>:<button className="button secondary" onClick={()=>setAttempt(n=>n+1)}>Try again</button>}</>}<span className="auth-footer">✧ A collection of little wins ✧</span></div></div>;
 }
