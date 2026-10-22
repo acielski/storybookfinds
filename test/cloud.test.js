@@ -37,7 +37,7 @@ test('concurrent cloud requests cannot silently overwrite each other',async()=>{
  await serve(await createRuntimeApp({env,gateway,apiOnly:true}),async base=>{const responses=await Promise.all([fetch(base+'/api/transactions',post('owner')),fetch(base+'/api/transactions',post('owner',{...row,description:'A different expense'}))]);assert.deepEqual(responses.map(r=>r.status).sort(),[201,409]);assert.equal(gateway.users.get('owner').state.transactions.length,1);});
 });
 test('Supabase gateway validates session, uses user JWT and compare-and-swap RPC',async()=>{
- const calls=[];const gateway=supabaseGateway(cloudConfig(env),async(url,options)=>{calls.push({url,options});return new Response(JSON.stringify(url.includes('/auth/')?{id:'user-123'}:url.includes('/rpc/')?null:[]),{status:200});});
- assert.deepEqual(await gateway.load('user-jwt'),{version:0,state:null});await assert.rejects(gateway.save('user-jwt',0,{}),e=>e.status===409);
- assert.equal(calls[0].options.headers.Authorization,'Bearer user-jwt');assert.equal(calls[2].options.headers.apikey,env.SUPABASE_PUBLISHABLE_KEY);assert.equal(JSON.parse(calls[2].options.body).expected_version,0);
+ const calls=[];const gateway=supabaseGateway(cloudConfig(env),async(url,options)=>{calls.push({url,options});return new Response(JSON.stringify(url.includes('/auth/')?{id:'user-123'}:url.includes('/workspace_context')?{ownerId:'user-123',role:'owner'}:url.includes('/rpc/')?null:[]),{status:200});});
+ assert.deepEqual(await gateway.load('user-jwt'),{version:0,state:null,role:'owner'});await assert.rejects(gateway.save('user-jwt',0,{}),e=>e.status===409);
+ assert.equal(calls[0].options.headers.Authorization,'Bearer user-jwt');assert.equal(calls[3].options.headers.apikey,env.SUPABASE_PUBLISHABLE_KEY);assert.equal(JSON.parse(calls[3].options.body).expected_version,0);
 });

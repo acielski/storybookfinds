@@ -41,7 +41,7 @@ Custom sales/expense CSVs use `date,description,category,amount` with YYYY-MM-DD
 
 ## Scope
 
-Without Supabase settings, local development uses the existing SQLite database without authentication; keep this mode private. On Vercel, both `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` are required. Missing configuration fails closed rather than falling back to a temporary SQLite database. Sign-in uses Supabase email/password authentication; every API request verifies the user session. SQL row-level policies restrict each account to its own workspace. The app never needs a service-role key. Disable public signups in Supabase and create the app user through its dashboard.
+Without Supabase settings, local development uses the existing SQLite database without authentication; keep this mode private. On Vercel, both `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` are required. Missing configuration fails closed rather than falling back to a temporary SQLite database. Sign-in uses Supabase email/password authentication; every API request verifies the user session. SQL row-level policies restrict accounts to their own workspace or an explicitly assigned shared shop. The app never needs a service-role key. Disable public signups in Supabase and create the app user through its dashboard.
 
 In Supabase mode, durable records and import history are stored as a versioned JSON workspace in PostgreSQL. Each request uses an isolated in-memory SQLite engine for the existing validation/import logic, then commits changes through an atomic Supabase function. Optimistic version checks return HTTP 409 on overlapping writes instead of losing data. Imported records and transaction IDs survive function restarts. This design suits the current small-business dataset; large multi-user reporting or inventory systems should move to normalized relational tables. Original local SQLite files are not automatically migrated; retain them and re-import CSVs as explained in the deployment checklist.
 
@@ -56,3 +56,9 @@ Open **Pricing** from the sidebar. The bundle builder starts with four empty pin
 The basic calculator supports addition, subtraction, multiplication, division, decimals, percentages, sign changes, clear, backspace, and keyboard controls while focused inside the calculator. Like a basic handheld calculator, chained operations are evaluated as entered. With + or −, the percent key calculates a percentage of the first number (200 − 10% = 180); with multiplication it divides the current input by 100 (200 × 10% = 20).
 
 Pricing is a scratchpad: navigating between tabs retains the current calculations, but reloading the page clears them. Quotes do not create sales or change recorded expenses.
+
+## Shared access and development deployments (dev branch)
+
+Follow [the development and sharing guide](docs/DEV_AND_SHARING.md). Shared access requires `002_shared_workspaces.sql` after the original migration. Administrators assign viewer/editor membership through Supabase; individual accounts keep their own passwords and access the owner's existing records. Viewers are read-only in both the app and database. Existing personal records are not merged or deleted.
+
+Use separate Vercel and Supabase projects for development. Set `APP_ENV=development` and `PRODUCTION_SUPABASE_URL` in the dev Vercel project, with `SUPABASE_URL` pointing to a different test Supabase project. A DEVELOPMENT banner identifies test deployments. The app refuses a development/production database collision and unconfigured Vercel previews. Development code lives on `dev`; merge to `main` only after testing and applying required production migrations.
