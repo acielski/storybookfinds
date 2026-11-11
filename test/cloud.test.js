@@ -41,3 +41,29 @@ test('Supabase gateway validates session, uses user JWT and compare-and-swap RPC
  assert.deepEqual(await gateway.load('user-jwt'),{version:0,state:null,role:'owner'});await assert.rejects(gateway.save('user-jwt',0,{}),e=>e.status===409);
  assert.equal(calls[0].options.headers.Authorization,'Bearer user-jwt');assert.equal(calls[3].options.headers.apikey,env.SUPABASE_PUBLISHABLE_KEY);assert.equal(JSON.parse(calls[3].options.body).expected_version,0);
 });
+
+test('an existing private workspace remains usable before the shared-access migration',async()=>{
+ const calls=[];
+ const gateway=supabaseGateway(cloudConfig(env),async(url,options)=>{
+  calls.push({url,options});
+  if(url.includes('/auth/'))return new Response(JSON.stringify({id:'original-owner'}));
+  if(url.includes('workspace_context'))return new Response(JSON.stringify({code:'PGRST202',message:'Function not found'}),{status:404});
+  if(url.includes('/workspaces?'))return new Response(JSON.stringify([{version:7,state:{existing:'kept'}}]));
+  return new Response('8');
+ });
+ assert.deepEqual(await gateway.load('owner-jwt'),{version:7,state:{existing:'kept'},role:'owner'});
+ assert.ok(calls[2].url.includes('owner_id=eq.original-owner'));
+ assert.equal(await gateway.save('owner-jwt',7,{existing:'kept'}),8);
+});
+
+test('sharing authentication, permission and database errors never fall back to private data',async()=>{
+ for(const [status,code]of [[401,'PGRST301'],[403,'42501'],[404,'PGRST205'],[500,'XX000']]){
+  let workspaceRead=false;
+  const gateway=supabaseGateway(cloudConfig(env),async url=>{
+   if(url.includes('/auth/'))return new Response(JSON.stringify({id:'owner'}));
+   if(url.includes('workspace_context'))return new Response(JSON.stringify({code}),{status});
+   workspaceRead=true;return new Response('[]');
+  });
+  await assert.rejects(gateway.load('jwt'));assert.equal(workspaceRead,false);
+ }
+});

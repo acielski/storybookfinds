@@ -22,10 +22,16 @@ export function cloudConfig(env=process.env){
  return {url:parsed.origin,key};
 }
 export function supabaseGateway(config,fetchImpl=fetch){
- async function request(path,token,options={}){
+ async function request(path,token,options={},allowMissingFunction=false){
   let response;
   try{response=await fetchImpl(config.url+path,{...options,headers:{apikey:config.key,Authorization:'Bearer '+token,'Content-Type':'application/json',...options.headers},signal:AbortSignal.timeout(15000)});}catch{throw failure('Cannot reach Supabase. Please try again.');}
   if(!response.ok){
+   // An older, valid deployment has private workspaces but no sharing RPC yet.
+   // Only this exact missing-function response may preserve its owner-only flow.
+   if(allowMissingFunction&&response.status===404){
+    let body;try{body=await response.json();}catch{}
+    if(body?.code==='PGRST202')return null;
+   }
    if(response.status===401)throw failure('Your session expired. Please sign in again.',401);
    if(response.status===403)throw failure('Your account cannot access this workspace.',403);
    throw failure('Supabase could not save or load your data. Check that the SQL setup has been run, then try again.');
@@ -36,7 +42,7 @@ export function supabaseGateway(config,fetchImpl=fetch){
   async load(token){
    const user=await request('/auth/v1/user',token);
    if(!user?.id)throw failure('Please sign in again.',401);
-   const context=await request('/rest/v1/rpc/workspace_context',token,{method:'POST',body:'{}'});
+   const context=await request('/rest/v1/rpc/workspace_context',token,{method:'POST',body:'{}'},true)||{ownerId:user.id,role:'owner'};
    if(!context?.ownerId||!['owner','editor','viewer'].includes(context.role))throw failure('Check that the shared workspace SQL setup has been run.');
    const rows=await request('/rest/v1/workspaces?select=version,state&owner_id=eq.'+encodeURIComponent(context.ownerId),token);
    if(!Array.isArray(rows))throw failure('Unexpected Supabase response.');

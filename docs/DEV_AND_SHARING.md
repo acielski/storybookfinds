@@ -10,7 +10,7 @@ Use two Supabase projects and two Vercel projects. Keep this page open and compl
 | Data | Real sales and expenses | Test data only |
 | Visible banner | None | DEVELOPMENT |
 
-The `dev` branch contains the shared-access changes. They have not been merged into production. Your current production code and records remain unchanged.
+Use `dev` to test changes before promoting them to `main`. Existing owner accounts continue using their private workspaces when the shared-access migration has not been installed yet. Shared memberships become available only after migration 002 is applied; no records are copied automatically.
 
 ## Stage 1 — create the development database
 
