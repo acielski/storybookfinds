@@ -11,7 +11,7 @@ Work through one box at a time. Keep this page open beside Supabase and Vercel.
 - [ ] Paste it into the Supabase query editor.
 - [ ] Click **Run**. You should see a success message with no returned rows.
 
-It is safe to run this setup again. It creates one private workspace per account, with row-level security. Do not turn row-level security off.
+For the shared-access version on dev, run `002_shared_workspaces.sql` after `001_workspace.sql`. Run migrations in order. Default accounts have private data; assigned shop members share their owner’s records. Do not turn row-level security off. See [development and shared access](DEV_AND_SHARING.md) before promoting to production.
 
 ## 2. Create your login
 
@@ -25,7 +25,7 @@ Your Supabase dashboard login is not automatically an app login. Create this acc
 - [ ] Open **Authentication → Sign In / Providers** (sometimes labeled **Providers** or **Settings**).
 - [ ] Find **Allow new users to sign up** under user signup settings. Turn it **off** and save. Keep the Email provider enabled.
 
-The app has no public signup form. Each user account has its own separate data; creating a second user does not share the first user's workspace. For now, use the same shop account on your devices. To reset a forgotten password, use Supabase's admin user-management controls.
+The app has no public signup form. Creating a second user does not automatically share records; add a shop membership after applying migration 002 as described in [the shared-access guide](DEV_AND_SHARING.md). For now, use the same shop account on your devices. To reset a forgotten password, use Supabase's admin user-management controls.
 
 ## 3. Find the two app settings
 
@@ -53,7 +53,7 @@ Keep these in a private note until you paste them into Vercel. You do not need t
 | `SUPABASE_URL` | Your Supabase Project URL |
 | `SUPABASE_PUBLISHABLE_KEY` | Your publishable key, or legacy anon key |
 
-- [ ] Apply both variables to **Production**. Also add them to Preview if you want preview deployments to use this same database. Otherwise leave previews unconfigured; they will show a configuration error without exposing data.
+- [ ] Apply live database variables to **Production only**. Use a separate Supabase database and Vercel project for testing, following [the dev setup guide](DEV_AND_SHARING.md). Do not share the live database with previews.
 - [ ] Click **Deploy**.
 - [ ] Wait for **Ready**, then click **Visit**.
 
