@@ -1,0 +1,13 @@
+export const money=value=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:2}).format(value/100);
+export const today=()=>new Date().toLocaleDateString('en-CA');
+export function cents(value){const text=String(value??'').trim();if(!text)return 0;if(!/^\d+(\.\d{1,2})?$/.test(text))throw Error('Use a positive USD amount with up to two decimal places.');const [whole,fraction='']=text.split('.');const result=Number(whole)*100+Number(fraction.padEnd(2,'0'));if(!Number.isSafeInteger(result)||result>1e11)throw Error('That amount is too large.');return result;}
+export const dollars=value=>(value/100).toFixed(2);
+export const prettyDate=(value,short=false)=>value?new Date(value+'T12:00:00').toLocaleDateString('en-US',short?{month:'short',day:'numeric'}:{month:'long',day:'numeric',year:'numeric'}):'Not set';
+export function dayDifference(date,from=today()){return date?Math.round((Date.parse(date+'T12:00:00Z')-Date.parse(from+'T12:00:00Z'))/86400000):null;}
+export function summarize(plan){const committed=plan.expenses.reduce((s,r)=>s+r.amount,0),paid=plan.expenses.reduce((s,r)=>s+r.paid,0);return {committed,paid,outstanding:committed-paid,remaining:plan.settings.budget-committed,allocated:plan.categories.reduce((s,r)=>s+r.budget,0),guests:plan.guests.reduce((s,r)=>s+r.partySize,0),confirmed:plan.guests.filter(r=>r.rsvp==='Confirmed').reduce((s,r)=>s+r.partySize,0),done:plan.tasks.filter(r=>r.done).length};}
+export const paymentStatus=row=>row.paid===row.amount?'Paid':row.paid?'Part paid':'Unpaid';
+export function download(name,content,type='application/json'){const url=URL.createObjectURL(new Blob([content],{type}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+export function csv(rows){return '\uFEFF'+rows.map(row=>row.map(cell=>'"'+String(cell??'').replace(/^[=+@\t\r-]/,"'$&").replaceAll('"','""')+'"').join(',')).join('\r\n');}
+let client=null;
+export function setAuthClient(value){client=value;}
+export async function request(path,options={}){const headers=new Headers(options.headers);if(client){const {data,error}=await client.auth.getSession();if(error||!data.session)throw Error('Please sign in again.');headers.set('Authorization','Bearer '+data.session.access_token);}let response;try{response=await fetch('/api'+path,{...options,headers});}catch{throw Error('Could not connect. Check your connection and try again.');}const body=await response.json();if(!response.ok)throw Object.assign(Error(body.error||'Request failed.'),{status:response.status});return body;}

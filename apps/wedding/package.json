@@ -1,0 +1,28 @@
+{
+  "name": "ever-after-wedding-planner",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "dev": "node start.js",
+    "start": "NODE_ENV=production node start.js",
+    "build": "vite build",
+    "test": "node --test checks/*.spec.mjs",
+    "test:browser": "node checks/browser.mjs && node checks/auth-browser.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "express": "^5.1.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "vite": "^7.0.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11",
+    "playwright": "^1.56.1"
+  }
+}
