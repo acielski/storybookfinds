@@ -12,7 +12,7 @@ export function cents(value,{optional=false}={}) {
 function isoDate(value){
  const text=String(value||'').trim();
  let date;
- if(/^\d{4}-\d{2}-\d{2}( |$)/.test(text)) date=text.slice(0,10);
+ if(/^\d{4}-\d{2}-\d{2}(?:[ T]|$)/.test(text)) date=text.slice(0,10);
  else {
   const match=text.match(/^([A-Za-z]{3}) (\d{1,2}), (\d{4})(?:,|$)/);
   const month=match && ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].indexOf(match[1]);
@@ -23,24 +23,59 @@ function isoDate(value){
  return date;
 }
 function count(value){const n=Number(value);if(!Number.isSafeInteger(n)||n<0)throw Error('Invalid report count.');return n;}
-export function parseUpload(buffer,type,validate){
- const records=parse(buffer,{columns:headers=>headers.map(h=>h.trim().toLowerCase()),skip_empty_lines:true,bom:true,trim:true});
- if(!records.length||records.length>10000)throw Error('Upload between 1 and 10,000 rows.');
- const header=records[0];
- const format='ledger_transaction_id' in header?'earnings':'estimated sales' in header?'overview':('created date' in header&&'transaction type' in header)?'wallet':'standard';
+const empty=value=>value===undefined||value===null||String(value).trim()==='';
+const optionalCount=value=>empty(value)?null:count(value);
+const financialTypes=new Set(['ORDER_EARNINGS','SHIPPING_CHARGE','CARRIER_ADJUSTMENT','CARRIER_ADJUSTMENT_REFUND','ORDER_REFUND','ORDER_REFUND_SHIPPING_COSTS','APPEALED_ORDER_REFUND','APPEALED_ORDER_REFUND_SHIPPING_COSTS','TIP']);
+function fee(row,...aliases){
+ const amounts=aliases.filter(key=>!empty(row[key])).map(key=>cents(row[key]));
+ if(amounts.some(value=>value<0))throw Error('Fees and cost of goods must not be negative.');
+ if(new Set(amounts).size>1)throw Error('Conflicting fee columns.');
+ return amounts[0]??0;
+}
+function ledgerCategory(row,amount){
+ if(row.transaction_type==='TIP')return 'Tips';
+ if(row.transaction_type==='SHIPPING_CHARGE')return 'Whatnot shipping';
+ if(row.transaction_type==='CARRIER_ADJUSTMENT'||row.transaction_type==='CARRIER_ADJUSTMENT_REFUND')return 'Carrier adjustments';
+ if(row.transaction_type.includes('REFUND'))return 'Whatnot refunds';
+ return amount<0?'Giveaway shipping':row.product_category||'Whatnot sales';
+}
+export function parseUpload(buffer,type,validate,options={}){
+ let columns=[];
+ const records=parse(buffer,{columns:headers=>(columns=headers.map(h=>h.trim().toLowerCase())),skip_empty_lines:true,bom:true,trim:true});
+ if((!records.length&&!options.allowEmpty)||records.length>10000)throw Error('Upload between 1 and 10,000 rows.');
+ const header=records[0]||Object.fromEntries(columns.map(key=>[key,'']));
+ const format='ledger_transaction_id' in header?'earnings':('estimated sales' in header||'estimated_sales' in header)?'overview':('created date' in header&&'transaction type' in header)?'wallet':'standard';
+ if(options.reportType&&format!==(options.reportType==='seller_financial_report'?'earnings':'overview'))throw Error('The report columns do not match the requested report type.');
+ if(options.reportType){
+  const required=options.reportType==='seller_financial_report'
+   ?['ledger_transaction_id','transaction_completed_at_utc','transaction_currency','transaction_type','transaction_amount']
+   :['date','currency','estimated_sales','estimated_earnings'];
+  for(const name of required)if(!columns.includes(name))throw Error(`The report is missing the required ${name} column.`);
+ }
+ const apiFinancial=options.reportType==='seller_financial_report'||['processing_fee','processing_fee_tax','commission_tax','quantity_sold'].some(key=>key in header);
  const rows=records.map((r,i)=>{try{
   if(format==='standard')return validate({...r,type:r.type||type});
   if(format==='earnings'){
    for(const field of ['ledger_transaction_id','transaction_completed_at_utc','transaction_currency','transaction_amount','transaction_type'])if(!r[field])throw Error(`Missing ${field}.`);
    if(r.transaction_currency!=='USD')throw Error('Only USD reports are supported.');
-   if(!['ORDER_EARNINGS','TIP'].includes(r.transaction_type))throw Error(`Unsupported earnings type: ${r.transaction_type}.`);
+   if(!financialTypes.has(r.transaction_type))throw Error(`Unsupported earnings type: ${r.transaction_type}.`);
    const amount=cents(r.transaction_amount);
-   const fees=['commission_fee','payment_processing_fee','tax_on_commission_fee','tax_on_payment_processing_fee'].reduce((s,k)=>s+(cents(r[k],{optional:true})||0),0);
-   const cogs=cents(r.cost_of_goods,{optional:true});
-   if(fees<0 || (cogs!==null&&cogs<0))throw Error('Fees and cost of goods must not be negative.');
-   return {key:'earnings:'+r.ledger_transaction_id,date:isoDate(r.transaction_completed_at_utc),orderDate:r.order_placed_at_utc?isoDate(r.order_placed_at_utc):null,orderId:r.order_id||null,description:r.listing_title||r.transaction_message||'Whatnot earnings',category:r.transaction_type==='TIP'?'Tips':amount<0?'Giveaway shipping':r.product_category||'Whatnot sales',cents:amount,fees,cogs,gross:cents(r.post_coupon_price,{optional:true}),kind:r.transaction_type,giveaway:r.buy_format==='GIVEAWAY'};
+   const fees=fee(r,'commission_fee')+fee(r,'processing_fee','payment_processing_fee')+fee(r,'commission_tax','tax_on_commission_fee')+fee(r,'processing_fee_tax','tax_on_payment_processing_fee');
+   const unitCogs=cents(r.cost_of_goods,{optional:true});
+   if(unitCogs!==null&&unitCogs<0)throw Error('Fees and cost of goods must not be negative.');
+   const quantity=apiFinancial&&r.transaction_type==='ORDER_EARNINGS'?optionalCount(r.quantity_sold):null;
+   if(quantity===0)throw Error('Sold quantity must be positive.');
+   // The API defines cost_of_goods per item. An absent quantity cannot be
+   // assumed to be one: retain it as incomplete instead of understating cost.
+   const cogs=apiFinancial?(r.transaction_type==='ORDER_EARNINGS'&&quantity!==null&&unitCogs!==null?unitCogs*quantity:null):unitCogs;
+   if(cogs!==null&&!Number.isSafeInteger(cogs))throw Error('Cost of goods is too large.');
+   return {key:'earnings:'+r.ledger_transaction_id,date:isoDate(r.transaction_completed_at_utc),orderDate:r.order_placed_at_utc?isoDate(r.order_placed_at_utc):null,orderId:r.order_id||null,description:r.listing_title||r.transaction_message||'Whatnot earnings',category:ledgerCategory(r,amount),cents:amount,fees,cogs,gross:cents(r.post_coupon_price,{optional:true}),kind:r.transaction_type,giveaway:r.buy_format?.toUpperCase()==='GIVEAWAY',...(apiFinancial?{currency:'USD',reportSchema:'seller-api',quantitySold:quantity,unitCogs}: {})};
   }
-  if(format==='overview')return {key:'overview:'+isoDate(r.date),date:isoDate(r.date),sales:cents(r['estimated sales']),earnings:cents(r['estimated earnings']),orders:count(r.orders),buyers:count(r.buyers),follows:count(r.follows)};
+  if(format==='overview'){
+   const apiOverview='estimated_sales' in r;
+   if(apiOverview&&r.currency!=='USD')throw Error('Only USD reports are supported.');
+   return {key:'overview:'+isoDate(r.date),date:isoDate(r.date),sales:cents(apiOverview?r.estimated_sales:r['estimated sales'],{optional:apiOverview}),earnings:cents(apiOverview?r.estimated_earnings:r['estimated earnings'],{optional:apiOverview}),orders:apiOverview?optionalCount(r.orders_count):count(r.orders),buyers:apiOverview?optionalCount(r.buyers_count):count(r.buyers),follows:apiOverview?optionalCount(r.follows_count):count(r.follows)};
+  }
   const kind=r['transaction type'],status=r.status?.toLowerCase();
   if(!['SALES','TIP','PAYOUT','ADJUSTMENT'].includes(kind))throw Error(`Unsupported wallet type: ${kind}.`);
   if(!['completed','processing'].includes(status))throw Error(`Unsupported status: ${status}.`);
@@ -48,6 +83,29 @@ export function parseUpload(buffer,type,validate){
   return {key:'wallet:'+identity,date:isoDate(r['created date']),cents:cents(r.amount),kind,status,description:kind==='PAYOUT'?'Whatnot payout':r.message||kind,orderId:r['order id']||null};
  }catch(e){throw Error(`Row ${i+2}: ${e.message}`);}});
  return {format,rows};
+}
+export function parseSellerReport(buffer,reportType){
+ if(!['seller_financial_report','analytics_overview_report'].includes(reportType))throw Error('Unsupported Seller API report type.');
+ return parseUpload(buffer,'sale',()=>{throw Error('Unexpected report columns.');},{reportType,allowEmpty:true});
+}
+function reconcileEarnings(existing,incoming){
+ for(const key of ['date','cents','kind'])if(existing[key]!==incoming[key])return null;
+ if((existing.currency||'USD')!==(incoming.currency||'USD'))return null;
+ if(existing.orderId&&incoming.orderId&&existing.orderId!==incoming.orderId)return null;
+ // Older CSV uploads must never replace a richer API record. The stable
+ // ledger ID still deduplicates both sources, including renamed downloads.
+ if(existing.reportSchema==='seller-api'&&incoming.reportSchema!=='seller-api')return existing;
+ for(const key of ['cogs','gross']){
+  if(existing[key]!=null&&incoming[key]!=null&&existing[key]!==incoming[key]){
+   // The old parser retained one unit of cost; the API includes quantity.
+   if(key!=='cogs'||existing.reportSchema==='seller-api'||incoming.reportSchema!=='seller-api'||existing.cogs!==incoming.unitCogs)return null;
+  }
+ }
+ if(existing.reportSchema==='seller-api'&&incoming.reportSchema==='seller-api'&&existing.fees!==incoming.fees)return null;
+ if(existing.reportSchema!=='seller-api'&&incoming.reportSchema!=='seller-api'&&existing.fees!==incoming.fees)return null;
+ const merged={...existing,...incoming};
+ for(const key of ['orderDate','orderId','cogs','gross'])if(incoming[key]==null&&existing[key]!=null)merged[key]=existing[key];
+ return merged;
 }
 export function setupWhatnot(db){
  db.exec('CREATE TABLE IF NOT EXISTS whatnot_records (source_key TEXT PRIMARY KEY, format TEXT NOT NULL, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS imports (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT NOT NULL, format TEXT NOT NULL, imported INTEGER NOT NULL, skipped INTEGER NOT NULL, updated INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
@@ -81,9 +139,14 @@ export function setupWhatnot(db){
       }
       const result=save(row);known.set(key,[{...row,id:Number(result.lastInsertRowid)}]);imported++;continue;
      }
-     const existing=read.get(row.key),serialized=JSON.stringify(row);
+     const existing=read.get(row.key);let serialized=JSON.stringify(row);
      if(existing){if(existing.payload===serialized){skipped++;continue;}
-      if(format==='earnings')throw Error('An existing earnings ID has conflicting values; no rows were imported.');
+      if(format==='earnings'){
+       const reconciled=reconcileEarnings(JSON.parse(existing.payload),row);
+       if(!reconciled)throw Error('An existing earnings ID has conflicting values; no rows were imported.');
+       serialized=JSON.stringify(reconciled);
+       if(existing.payload===serialized){skipped++;continue;}
+      }
       if(format==='wallet'&&JSON.parse(existing.payload).status==='completed'&&row.status==='processing'){skipped++;continue;}
       updated++;
      }else imported++;

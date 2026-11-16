@@ -34,7 +34,7 @@ test('development configuration blocks production database reuse and unconfigure
 test('gateway queries the shared owner instead of the member private workspace',async()=>{
  const urls=[];const env={SUPABASE_URL:'https://example.supabase.co',SUPABASE_PUBLISHABLE_KEY:'sb_publishable_test'};
  const gateway=supabaseGateway(cloudConfig(env),async url=>{urls.push(url);return new Response(JSON.stringify(url.includes('/auth/')?{id:editor}:url.includes('workspace_context')?{ownerId:owner,role:'viewer'}:[{version:5,state:{shared:true}}]));});
- assert.deepEqual(await gateway.load('token'),{version:5,state:{shared:true},role:'viewer'});assert.ok(urls.at(-1).includes('owner_id=eq.'+owner));
+ assert.deepEqual(await gateway.load('token'),{version:5,state:{shared:true},role:'viewer',ownerId:owner});assert.ok(urls.at(-1).includes('owner_id=eq.'+owner));
 });
 test('viewer API can read the shared data but cannot save, delete or import',async()=>{
  const app=await createRuntimeApp({env:{VERCEL:'1',SUPABASE_URL:'https://example.supabase.co',SUPABASE_PUBLISHABLE_KEY:'sb_publishable_test'},apiOnly:true,gateway:{async load(){return {role:'viewer',version:0,state:null};},async save(){assert.fail('Viewer must never persist');}}});

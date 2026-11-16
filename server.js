@@ -44,6 +44,10 @@ export async function createApp(dbPath = 'data/ledger.sqlite',options={}) {
   const persist=async()=>options.persist?.(db);
   const app = express();
   app.use(express.json({limit:'32kb'}));
+  if(options.shopFactory){
+    const shop=await options.shopFactory({db,whatnot,save,persist});
+    app.use('/api/shop',shop);
+  }
   app.get('/api/transactions', (req,res) => res.json([...db.prepare('SELECT * FROM transactions ORDER BY date DESC,id DESC').all(),...whatnot.getTransactions()].sort((a,b)=>b.date.localeCompare(a.date))));
   app.get('/api/whatnot', (req,res)=>res.json(whatnot.summary()));
   app.post('/api/transactions', async (req,res,next) => { try { const row = validate(req.body); const result=save(row); await persist(); res.status(201).json({...row,id:Number(result.lastInsertRowid)}); } catch(e) { e.status ||=400; next(e); } });

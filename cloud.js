@@ -3,6 +3,8 @@ import {resolve} from 'node:path';
 import {createApp} from './server.js';
 import {exportWorkspace} from './workspace.js';
 import {usernameSignIn} from './username-auth.js';
+import {createShopFactory} from './seller-runtime.js';
+import {createSellerBackgroundRouter} from './seller-background.js';
 
 function failure(message,status=503){return Object.assign(new Error(message),{status});}
 export function cloudConfig(env=process.env){
@@ -46,7 +48,7 @@ export function supabaseGateway(config,fetchImpl=fetch){
    if(!context?.ownerId||!['owner','editor','viewer'].includes(context.role))throw failure('Check that the shared workspace SQL setup has been run.');
    const rows=await request('/rest/v1/workspaces?select=version,state&owner_id=eq.'+encodeURIComponent(context.ownerId),token);
    if(!Array.isArray(rows))throw failure('Unexpected Supabase response.');
-   return {version:rows[0]?.version||0,state:rows[0]?.state||null,role:context.role};
+   return {version:rows[0]?.version||0,state:rows[0]?.state||null,role:context.role,ownerId:context.ownerId};
   },
   async save(token,version,state){
    const saved=await request('/rest/v1/rpc/save_workspace',token,{method:'POST',body:JSON.stringify({expected_version:version,new_state:state})});
@@ -59,7 +61,7 @@ export async function createRuntimeApp({env=process.env,gateway,fetchImpl,apiOnl
  let config,configurationError;
  try{config=cloudConfig(env);}catch(error){configurationError=error;}
  if(!config&&!configurationError){
-  const local=await createApp(env.DB_PATH||'data/ledger.sqlite',{apiOnly:true});
+  const local=await createApp(env.DB_PATH||'data/ledger.sqlite',{apiOnly:true,shopFactory:createShopFactory({env,role:'owner',ownerId:'local',fetchImpl})});
   const app=express();
   app.get('/api/config',(req,res)=>res.set('Cache-Control','no-store').json({mode:'local',environment:'development'}));
   app.get('/api/session',(req,res)=>res.set('Cache-Control','no-store').json({role:'owner'}));
@@ -75,6 +77,7 @@ export async function createRuntimeApp({env=process.env,gateway,fetchImpl,apiOnl
   if(configurationError)return res.status(503).json({error:configurationError.message});
   return usernameSignIn({env,config,fetchImpl})(req,res,next);
  });
+ if(config)app.use('/api/whatnot-worker',createSellerBackgroundRouter({env,config,fetchImpl}));
  app.use(async(req,res,next)=>{
   if(!req.path.startsWith('/api/'))return next();
   try{
@@ -85,7 +88,7 @@ export async function createRuntimeApp({env=process.env,gateway,fetchImpl,apiOnl
    const role=workspace.role||'owner';
    if(req.path==='/api/session'&&req.method==='GET')return res.json({role});
    if(role==='viewer'&&!['GET','HEAD'].includes(req.method))throw failure('This account has view-only access. Ask the shop owner for editor access to make changes.',403);
-   const dataApi=await createApp(':memory:',{apiOnly:true,state:workspace.state,persist:async db=>{version=await store.save(token,version,exportWorkspace(db));}});
+   const dataApi=await createApp(':memory:',{apiOnly:true,state:workspace.state,persist:async db=>{version=await store.save(token,version,exportWorkspace(db));},shopFactory:createShopFactory({env,role,ownerId:workspace.ownerId,token,config,fetchImpl})});
    let closed=false;const close=()=>{if(!closed){closed=true;dataApi.locals.db.close();}};
    res.once('finish',close);res.once('close',close);
    dataApi(req,res,next);
