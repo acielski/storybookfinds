@@ -38,7 +38,7 @@ test('concurrent cloud requests cannot silently overwrite each other',async()=>{
 });
 test('Supabase gateway validates session, uses user JWT and compare-and-swap RPC',async()=>{
  const calls=[];const gateway=supabaseGateway(cloudConfig(env),async(url,options)=>{calls.push({url,options});return new Response(JSON.stringify(url.includes('/auth/')?{id:'user-123'}:url.includes('/workspace_context')?{ownerId:'user-123',role:'owner'}:url.includes('/rpc/')?null:[]),{status:200});});
- assert.deepEqual(await gateway.load('user-jwt'),{version:0,state:null,role:'owner'});await assert.rejects(gateway.save('user-jwt',0,{}),e=>e.status===409);
+ assert.deepEqual(await gateway.load('user-jwt'),{version:0,state:null,role:'owner',ownerId:'user-123'});await assert.rejects(gateway.save('user-jwt',0,{}),e=>e.status===409);
  assert.equal(calls[0].options.headers.Authorization,'Bearer user-jwt');assert.equal(calls[3].options.headers.apikey,env.SUPABASE_PUBLISHABLE_KEY);assert.equal(JSON.parse(calls[3].options.body).expected_version,0);
 });
 
@@ -51,7 +51,7 @@ test('an existing private workspace remains usable before the shared-access migr
   if(url.includes('/workspaces?'))return new Response(JSON.stringify([{version:7,state:{existing:'kept'}}]));
   return new Response('8');
  });
- assert.deepEqual(await gateway.load('owner-jwt'),{version:7,state:{existing:'kept'},role:'owner'});
+ assert.deepEqual(await gateway.load('owner-jwt'),{version:7,state:{existing:'kept'},role:'owner',ownerId:'original-owner'});
  assert.ok(calls[2].url.includes('owner_id=eq.original-owner'));
  assert.equal(await gateway.save('owner-jwt',7,{existing:'kept'}),8);
 });
