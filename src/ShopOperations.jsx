@@ -47,7 +47,7 @@ export default function ShopOperations({view,role='viewer',onFinancialChange,onN
         await load();
         await new Promise(resolve=>setTimeout(resolve,250));
       }
-      if(current===generation.current&&mounted.current){const job=jobOf(result);if(['failed','error'].includes(job?.status))throw Error(job.error||'Sync needs attention. Your saved progress is available to resume.');setNotice('Shop sync finished. Your saved records are up to date.');}
+      if(current===generation.current&&mounted.current){const job=jobOf(result);if(['failed','error'].includes(job?.status))throw Error(job.error||'Sync needs attention. Your saved progress is available to resume.');setNotice('Shop sync finished. Orders, inventory, shipments and shows are updated. Financial reports and wallet CSVs are imported separately.');}
     }catch(e){if(current===generation.current&&mounted.current)setError(e.message);}
     finally{if(current===generation.current&&mounted.current)setRunning(false);}
   };

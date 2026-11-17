@@ -7,6 +7,7 @@ import './storybook.css';
 import ExpenseSheet from './ExpenseSheet.jsx';
 import PricingTools from './PricingTools.jsx';
 import ShopOperations from './ShopOperations.jsx';
+import WalletReference from './WalletReference.jsx';
 import Auth,{Account} from './Auth.jsx';
 import {apiFetch,importFiles} from './api.js';
 import {pinMetrics,isPinCategory} from './pins.js';
@@ -81,9 +82,34 @@ function WhatnotSummary({reports,inRange,expanded,onImport}){
  const salesTotal=completeTotal('sales'),earningsTotal=completeTotal('earnings');
  const estimatedSales=salesTotal===null?null:salesTotal/100,estimatedEarnings=earningsTotal===null?null:earningsTotal/100;
  const orders=completeTotal('orders');
- const pending=wallet.filter(r=>r.status==='processing'&&['SALES','TIP'].includes(r.kind)).reduce((s,r)=>s+r.cents,0)/100;
- const payouts=wallet.filter(r=>r.status==='completed'&&r.kind==='PAYOUT').reduce((s,r)=>s+Math.abs(r.cents),0)/100;
  const hasReports=reports.earnings.rows||reports.overview.length||reports.wallet.rows;
- return <section className="whatnot-panel"><div className="whatnot-title"><div className="whatnot-mark"><Store size={19}/></div><div><h3>Whatnot financial records</h3><p>{hasReports?'Earnings, estimates, and wallet activity — each in its right place.':'Import your Whatnot exports directly. No spreadsheet cleanup needed.'}</p></div>{onImport&&<button className="text-button" onClick={onImport}>{hasReports?'Add report':'Import Whatnot CSV'}<Upload size={14}/></button>}</div>{!!hasReports&&<><div className="report-metrics"><div><span>Estimated gross sales</span><strong>{estimatedSales===null?'—':money(estimatedSales)}</strong><small>Daily overview · {orders===null?'order count unavailable':orders+' orders'}</small></div><div><span>Estimated net earnings</span><strong>{estimatedEarnings===null?'—':money(estimatedEarnings)}</strong><small>Daily overview · not added to income</small></div><div><span>Pending wallet earnings</span><strong>{money(pending)}</strong><small>Processing · excluded from income</small></div><div><span>Completed payouts</span><strong>{money(payouts)}</strong><small>Transfers · not business expenses</small></div></div><div className="report-note">Income below uses settled financial report earnings after Whatnot fees, dated by completion (UTC), plus manual entries. Overview estimates and wallet activity are kept separate to prevent double-counting. A dash means the overview data is missing or incomplete. {reports.earnings.missingCogs>0&&`${reports.earnings.missingCogs} sold items have blank or zero cost of goods; operating balance is not final profit.`}</div></>}{expanded&&<><div className="report-details"><div><h3>Settled report reconciliation · all time</h3><div className="reconcile"><span>Item sales after coupons<b>{money(reports.earnings.gross/100)}</b></span><span>Platform fees already deducted<b>{money(reports.earnings.fees/100)}</b></span><span>Net report earnings, including tips & deductions<b>{money(reports.earnings.net/100)}</b></span></div><p className="form-note">{reports.earnings.rows} unique ledger entries · {reports.earnings.zeroRows} zero-value entries retained. Fees are informational and are not subtracted again. Payout-failure refunds and other wallet adjustments are excluded from income.</p></div><div><h3>Import history</h3>{reports.imports.length?<div className="import-list">{reports.imports.slice(0,6).map(item=><div key={item.id}><FileSpreadsheet size={15}/><span title={item.filename}>{item.filename}<small>{item.format} · {item.imported} added · {item.skipped} skipped · {item.updated} updated</small></span><Check size={14}/></div>)}</div>:<p className="form-note">No files imported yet.</p>}</div></div>{wallet.length>0&&<div className="wallet-section"><h3>Wallet activity <span className="count">{wallet.length}</span></h3><p className="form-note">Reference only. Dates appear as exported by Whatnot; wallet exports do not specify a timezone.</p><div className="table-scroll"><table><thead><tr><th>Date</th><th>Description</th><th>Type</th><th>Status</th><th className="amount">Net amount</th></tr></thead><tbody>{wallet.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(r=><tr key={r.key}><td>{r.date}</td><td className="wallet-description">{r.description}</td><td>{r.kind}</td><td><span className={'status '+r.status}>{r.status}</span></td><td className="amount">{money(r.cents/100)}</td></tr>)}</tbody></table></div></div>}</>}</section>;
+ return <>
+  <section className="whatnot-panel">
+   <div className="whatnot-title">
+    <div className="whatnot-mark"><Store size={19}/></div>
+    <div><h3>Whatnot financial records</h3><p>{hasReports?'Settled earnings and daily sales estimates, each in its right place.':'Import your Whatnot exports directly. No spreadsheet cleanup needed.'}</p></div>
+    {onImport&&<button className="text-button" onClick={onImport}>{hasReports?'Add report':'Import Whatnot CSV'}<Upload size={14}/></button>}
+   </div>
+   {!!hasReports&&<>
+    <div className="report-metrics primary-report-metrics">
+     <div><span>Estimated gross sales</span><strong>{estimatedSales===null?'—':money(estimatedSales)}</strong><small>Daily overview · {orders===null?'order count unavailable':orders+' orders'}</small></div>
+     <div><span>Estimated net earnings</span><strong>{estimatedEarnings===null?'—':money(estimatedEarnings)}</strong><small>Daily overview · not added to income</small></div>
+    </div>
+    <div className="report-note">Income below uses settled financial report earnings after Whatnot fees, dated by completion (UTC), plus manual entries. Overview estimates are kept separate to prevent double-counting. A dash means the overview data is missing or incomplete. {reports.earnings.missingCogs>0&&`${reports.earnings.missingCogs} sold items have blank or zero cost of goods; operating balance is not final profit.`}</div>
+   </>}
+   {expanded&&<div className="report-details">
+    <div>
+     <h3>Settled report reconciliation · all time</h3>
+     <div className="reconcile"><span>Item sales after coupons<b>{money(reports.earnings.gross/100)}</b></span><span>Platform fees already deducted<b>{money(reports.earnings.fees/100)}</b></span><span>Net report earnings, including tips & deductions<b>{money(reports.earnings.net/100)}</b></span></div>
+     <p className="form-note">{reports.earnings.rows} unique ledger entries · {reports.earnings.zeroRows} zero-value entries retained. Fees are informational and are not subtracted again. Payout-failure refunds and other wallet adjustments are excluded from income.</p>
+    </div>
+    <div>
+     <h3>Import history</h3>
+     {reports.imports.length?<div className="import-list">{reports.imports.slice(0,6).map(item=><div key={item.id}><FileSpreadsheet size={15}/><span title={item.filename}>{item.filename}<small>{item.format} · {item.imported} added · {item.skipped} skipped · {item.updated} updated</small></span><Check size={14}/></div>)}</div>:<p className="form-note">No files imported yet.</p>}
+    </div>
+   </div>}
+  </section>
+  {expanded&&<WalletReference records={wallet} onImport={onImport}/>}
+ </>;
 }
 createRoot(document.getElementById('root')).render(<Auth><App/></Auth>);

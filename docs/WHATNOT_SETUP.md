@@ -75,6 +75,8 @@ For testing, use the existing separate development Vercel/Supabase projects, the
 
 Supply pin purchase costs, storage locations, and off-platform expenses yourself. Whatnot cannot infer those. Local inventory cost notes are planning data and do not automatically create another expense or override Whatnot's recorded cost of goods.
 
+Financial and overview API reports do not refresh wallet or payout history. The current Seller API has no wallet/payout endpoint or payout report type. Any previously uploaded wallet CSVs appear under **Imported wallet reference**, with their source and record dates. Their subtotals can be partial or stale and do not verify bank deposits. To update that reference, upload a current wallet CSV for the period you want to review; use Whatnot's wallet/bank records to confirm actual payouts. A completed shop sync does not make historical wallet CSV statuses current.
+
 ## 6. Set up your 4 × 6 printer
 
 1. In Whatnot Seller Hub, open **Shipments → Sidebar → Default Label Options**.

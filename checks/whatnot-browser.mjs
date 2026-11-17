@@ -52,6 +52,10 @@ const fixtureFetch=async(value,options={})=>{
 const app=await createRuntimeApp({env:{NODE_ENV:'production',DB_PATH:':memory:',WHATNOT_API_TOKEN:'wn_pat_tk_fixture_only',WHATNOT_SELLER_ID:'seller-1'},fetchImpl:fixtureFetch});
 const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
 const base='http://127.0.0.1:'+server.address().port;
+const walletUpload=new FormData();
+walletUpload.set('type','sale');
+walletUpload.set('file',new Blob(['Created Date,Amount,Order ID,Message,Status,Transaction Type\n"Sep 2, 2026, 2:00:00 PM",-100.00,,Fixture payout,completed,PAYOUT\n"Sep 3, 2026, 2:00:00 PM",10.00,old-order,Fixture pending sale,processing,SALES\n']),'fixture-wallet.csv');
+assert.equal((await fetch(base+'/api/import',{method:'POST',body:walletUpload})).status,200);
 const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
 const page=await browser.newPage({viewport:{width:1440,height:1100}}),errors=[];
 // Chromium's PDF navigation can discard the DevTools response body. Observe a
@@ -107,6 +111,13 @@ try{
  await(await popup).close();
  await page.screenshot({path:artifacts+'/shipping.png',fullPage:true});
  await nav('Money');
+ const walletReference=page.getByRole('region',{name:'Imported wallet reference'});
+ await walletReference.waitFor();
+ await walletReference.getByText('CSV reference · not updated by API sync',{exact:true}).waitFor();
+ assert.equal(await page.locator('.report-metrics > div').count(),2,'API comparison must contain only sales and earnings estimates');
+ await walletReference.getByText('$100.00',{exact:true}).waitFor();
+ await walletReference.locator('.wallet-reference-metrics').getByText('$10.00',{exact:true}).waitFor();
+ await walletReference.getByText('-$100.00',{exact:true}).waitFor();
  await page.getByRole('button',{name:'Request report',exact:true}).click();
  await page.getByRole('button',{name:'Check & import',exact:true}).click();
  await page.getByText('Report imported and reconciled',{exact:false}).waitFor();
@@ -114,6 +125,18 @@ try{
  assert.equal(transactions.filter(row=>row.type==='sale').reduce((sum,row)=>sum+row.cents,0),850);
  await page.getByRole('button',{name:'Check',exact:true}).click();
  assert.equal((await(await fetch(base+'/api/transactions')).json()).length,2,'Rechecking must not duplicate sale or cost');
+ await walletReference.getByText('$100.00',{exact:true}).waitFor();
+ await walletReference.locator('.wallet-reference-metrics').getByText('$10.00',{exact:true}).waitFor();
+ await page.getByLabel('Date range',{exact:true}).selectOption('month');
+ await walletReference.getByText('No imported wallet records in the selected period.',{exact:false}).waitFor();
+ assert.equal(await walletReference.locator('.wallet-reference-metrics strong').allTextContents().then(values=>values.join(',')),'—,—');
+ await page.getByLabel('Date range',{exact:true}).selectOption('all');
+ await walletReference.getByText('$100.00',{exact:true}).waitFor();
+ await page.screenshot({path:artifacts+'/wallet-reference.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});
+ await page.screenshot({path:artifacts+'/wallet-reference-mobile.png',fullPage:true});
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),'Wallet reference must fit a mobile viewport');
+ await page.setViewportSize({width:1440,height:1100});
  await nav('Expenses');await page.getByRole('heading',{name:'Expenses',exact:true}).waitFor();
  await nav('Pricing');await page.getByRole('heading',{name:'Pricing',exact:true}).waitFor();
  await nav('Shows');await page.getByText('Fixture pin show',{exact:true}).waitFor();
@@ -122,7 +145,7 @@ try{
  await page.screenshot({path:artifacts+'/mobile.png',fullPage:true});
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),'Mobile page must fit without horizontal overflow');
  assert.deepEqual(errors,[],'Browser must not throw render/runtime exceptions');
- console.log(JSON.stringify({passed:true,upstreamRequests:calls.length,labelRequests,screenshots:artifacts,checked:['connect','sync','inventory cost/quantity/price','orders','packing join','thermal PDF/reprint','financial import/dedupe','legacy views','desktop/mobile']}));
+ console.log(JSON.stringify({passed:true,upstreamRequests:calls.length,labelRequests,screenshots:artifacts,checked:['connect','sync','inventory cost/quantity/price','orders','packing join','thermal PDF/reprint','financial import/dedupe','wallet CSV provenance/filter/no API refresh','legacy views','desktop/mobile']}));
 }finally{
  await browser.close();await new Promise(resolve=>server.close(resolve));app.locals.db.close();
 }
